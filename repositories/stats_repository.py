@@ -4,16 +4,18 @@ from repositories.base_repository import BaseRepository
 
 
 class StatRepository(BaseRepository):
-    def check_stat_exists(self, game_id: str, player_id: str) -> bool:
+    async def check_stat_exists(self, game_id: str, player_id: str) -> bool:
         query = """
             SELECT 1
             FROM stats
             WHERE GameId ILIKE $1 and PlayerId ILIKE $2
             LIMIT 1
         """
-        return self.fetch_one(query, (game_id, player_id))
+        result = await self.fetch_one(query, (game_id, player_id))
+
+        return result is not None
     
-    def insert_stats(self, stat_dtos: List[PlayerMatchStatsDTO]) -> None:
+    async def insert_stats(self, stat_dtos: List[PlayerMatchStatsDTO]) -> None:
         if not stat_dtos:
             return
         
@@ -24,4 +26,4 @@ class StatRepository(BaseRepository):
             ({columns}) VALUES ({placeholders})
             ON CONFLICT (GameId, PlayerId) DO NOTHING
         """
-        self.execute_batch(query, values)
+        await self.execute_batch(query, values)

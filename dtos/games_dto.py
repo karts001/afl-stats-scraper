@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, Field
 
 class MatchMetadataDTO(BaseModel):
@@ -15,13 +16,13 @@ class MatchScoreDTO(BaseModel):
     home_team_score_ht: str
     home_team_score_3qt: str
     home_team_score_ft: str
-    home_team_score: str
+    home_team_score: int
     away_team: str
     away_team_score_qt: str
     away_team_score_ht: str
     away_team_score_3qt: str
     away_team_score_ft: str
-    away_team_score: str
+    away_team_score: int
 
 class ReducedGameDTO(BaseModel):
     game_id: str
@@ -42,18 +43,17 @@ class GameDTO(BaseModel):
     home_team_score_ht: str = Field(alias="HomeTeamScoreHT")
     home_team_score_3qt: str = Field(alias="HomeTeamScore3QT")
     home_team_score_ft: str = Field(alias="HomeTeamScoreFT")
-    home_team_score: str = Field(alias="HomeTeamScore")
+    home_team_score: int = Field(alias="HomeTeamScore")
     away_team: str = Field(alias="AwayTeam")
     away_team_score_qt: str = Field(alias="AwayTeamScoreQT")
     away_team_score_ht: str = Field(alias="AwayTeamScoreHT")
     away_team_score_3qt: str = Field(alias="AwayTeamScore3QT")
     away_team_score_ft: str = Field(alias="AwayTeamScoreFT")
-    away_team_score: str = Field(alias="AwayTeamScore")
-    max_temp: float = Field(alias="MaxTemp", default=None)
-    min_temp: float = Field(alias="MinTemp", default=None)
-    rainfall: float = Field(alias="Rainfall", default=None)
+    away_team_score: int = Field(alias="AwayTeamScore")
+    max_temp: Optional[float] = Field(alias="MaxTemp", default=None)
+    min_temp: Optional[float] = Field(alias="MinTemp", default=None)
+    rainfall: Optional[float] = Field(alias="Rainfall", default=None)
     
     class Config:
         validate_by_name = True
         frozen=True
-

@@ -33,7 +33,7 @@ class BaseRepository():
             raise ValueError("DTO set is empty")
         sample_dto = next(iter(dtos)) # can't index sets so use this instead
         fields = sample_dto.model_dump(by_alias=True).keys()
-        placeholders = ", ".join([r"%s"] * len(fields))
+        placeholders = ", ".join(f"${i+1}" for i in range(len(fields)))
         columns = ", ".join(fields)
         values = [tuple(dto.model_dump().values()) for dto in dtos]
 

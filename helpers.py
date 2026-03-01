@@ -14,6 +14,35 @@ name_corrections = {
     "OSullivan": ["o", "sullivan"]
 }
 
+FINALS_ROUND_MAP = {
+    "Qualifying Final": "QF",
+    "Elimination Final": "EF",
+    "Semi Final": "SF",
+    "Preliminary Final": "PF",
+    "Grand Final": "GF"
+}
+
+TEAM_SLUG_MAP = {
+    "Adelaide": "adelaide-crows",
+    "Brisbane-Lions": "brisbane-lions",
+    "Carlton": "carlton-blues",
+    "Collingwood": "collingwood-magpies",
+    "Essendon": "essendon-bombers",
+    "Fremantle": "fremantle-dockers",
+    "Geelong": "geelong-cats",
+    "Gold-Coast": "gold-coast-suns",
+    "Greater Western Sydney": "greater-western-sydney-giants",
+    "Hawthorn": "hawthorn-hawks",
+    "Melbourne": "melbourne-demons",
+    "North-Melbourne": "north-melbourne-kangaroos",
+    "Port-Adelaide": "port-adelaide-power",
+    "Richmond": "richmond-tigers",
+    "St-Kilda": "st-kilda-saints",
+    "Sydney": "sydney-swans",
+    "West-Coast": "west-coast-eagles",
+    "Western-Bulldogs": "western-bulldogs",
+}
+
 def convert_date_format(date_str):
     """
     Convert date from DD-MMM-YYYY format to YYYY-MM-DD format

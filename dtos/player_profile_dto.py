@@ -1,10 +1,11 @@
+from typing import Optional
 from pydantic import BaseModel, Field
 
 class PlayerProfileDTO(BaseModel):
     player_id: str = Field(alias="PlayerId")
     display_name: str = Field(alias="DisplayName")
     height: int = Field(alias="Height")
-    weight: int = Field(alias="Weight")
+    weight: Optional[int] = Field(alias="Weight", default=None)
     dob: str = Field(alias="Dob")
     position: str = Field(alias="Position")
     origin: str = Field(alias="Origin")

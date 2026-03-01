@@ -4,18 +4,14 @@ from urllib.parse import urljoin
 from collections import defaultdict
 from logger import logger
 
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 import httpx
 from bs4 import BeautifulSoup, ResultSet
 
-from database import AsyncDatabaseConnection
 from dtos.games_dto import GameDTO, MatchMetadataDTO, MatchScoreDTO, ReducedGameDTO
 from dtos.player_profile_dto import PlayerProfileDTO
 from dtos.stats_dto import PlayerMatchStatsDTO
-from helpers import before_second_dot, convert_date_format, field_names
-from repositories.game_repository import GameRepository
-from repositories.player_repository import PlayerRepository
-from repositories.stats_repository import StatRepository
+from helpers import FINALS_ROUND_MAP, before_second_dot, convert_date_format, field_names
 from scrapers.footy_wire_scraper import FootyWireScraper
 from services.game_service import GameService
 from services.player_service import PlayerService
@@ -42,6 +38,12 @@ class AflTablesScraper():
         self.scraped_stats: set[PlayerMatchStatsDTO] = set()
         self.scraped_games: set[GameDTO] = set()
         self._player_lock = asyncio.Lock()
+        self.client = httpx.AsyncClient(headers=
+            {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
+            timeout=30.0
+        )
+        self.dob_cache: dict[str, str] = {}
+
 
     async def get_match_links(self, year: int = 2025) -> List[str]:
         """Get a list of endpoints which refer to specific match stats for a given year
@@ -54,19 +56,18 @@ class AflTablesScraper():
             in that year.
         """
         logger.info("Getting a list of endpoints which refer to stats from specific games")
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{self.base_url}{year}t.html")
+        response = await self.client.get(f"{self.base_url}{year}t.html")
 
-            if response.status_code == httpx.codes.OK:
-                soup = BeautifulSoup(response.text, "html.parser")
-                all_links = soup.find_all("a", href=True)
+        if response.status_code == httpx.codes.OK:
+            soup = BeautifulSoup(response.text, "html.parser")
+            all_links = soup.find_all("a", href=True)
 
-                return list(dict.fromkeys(
-                    link["href"] for link in all_links if f"games/{year}" in link["href"]
-                ))
-            else:
-                logger.error(f"❌ Failed to fetch match links for {year}. Status: {response.status_code}")
-                logger.info(f"Response content: {response.text}")
+            return list(dict.fromkeys(
+                link["href"] for link in all_links if f"games/{year}" in link["href"]
+            ))
+        else:
+            logger.error(f"❌ Failed to fetch match links for {year}. Status: {response.status_code}")
+            logger.info(f"Response content: {response.text}")
 
     async def get_match_related_data(self, match_endpoint: str) -> GameDTO | ReducedGameDTO:
         """Get game related data for a given game. THings like attendance, home team, away team etc.
@@ -79,30 +80,30 @@ class AflTablesScraper():
             which is used to query player stats.
         """
 
-        async with httpx.AsyncClient() as client:
-            logger.info("Getting game related data")
-            response = await client.get(f"{self.base_url}{match_endpoint}")
+        logger.info("Getting game related data")
+        response = await self.client.get(f"{self.base_url}{match_endpoint}")
 
-            if response.status_code == httpx.codes.OK:
+        if response.status_code == httpx.codes.OK:
 
-                soup = BeautifulSoup(response.text, "html.parser")
+            soup = BeautifulSoup(response.text, "html.parser")
 
-                full_table = soup.find("table")
-                all_rows = full_table.find_all("tr")
+            full_table = soup.find("table")
+            all_rows = full_table.find_all("tr")
 
-                match_scores_dto = self._get_match_score_data(all_rows)
-                metadata_dto = await self._get_match_metadata(all_rows, match_scores_dto.home_team, match_scores_dto.away_team)
+            match_scores_dto = self._get_match_score_data(all_rows)
+            metadata_dto = await self._get_match_metadata(all_rows, match_scores_dto.home_team, match_scores_dto.away_team)
 
-                if isinstance(metadata_dto, ReducedGameDTO):
-                    return metadata_dto
-                
-                if metadata_dto is not None:
-                    logger.info("Adding game to DTO")
-                    game_dto = GameDTO(**metadata_dto.model_dump(), **match_scores_dto.model_dump())
-                    return game_dto
-            else:
-                logger.error(f"❌ Failed to fetch match metadata and score data. Status: {response.status_code}")
-                logger.info(f"Response content: {response.content}")
+            if isinstance(metadata_dto, ReducedGameDTO):
+                return metadata_dto
+            
+            if metadata_dto is not None:
+                logger.info("Adding game to DTO")
+                game_dto = GameDTO(**metadata_dto.model_dump(), **match_scores_dto.model_dump())
+                logger.info(f"game dto: {game_dto}")
+                self.scraped_games.add(game_dto)
+        else:
+            logger.error(f"❌ Failed to fetch match metadata and score data. Status: {response.status_code}")
+            logger.info(f"Response content: {response.content}")
 
     async def get_player_stats_for_match(self,
         match_endpoint: str,
@@ -110,6 +111,7 @@ class AflTablesScraper():
         home_team: str,
         away_team: str,
         round_id: str,
+        year: int
     ) -> None:
         
         """Get the individual player stats (Kicks, Disposals etc.) for a given match
@@ -120,6 +122,7 @@ class AflTablesScraper():
             home_team (str): Name of the home team
             away_team (str): Name of the away team
             round_id (str): RoundId for the given match
+            year (int): Year of the match
 
         Returns:
             Tuple[List[PlayerMatchStatsDTO], List[PlayerProfileDTO]]: Tuple containing a list 
@@ -144,7 +147,7 @@ class AflTablesScraper():
                 display_name = cells[1].get_text(strip=True)
 
                 # get the D.O.B from the player profile
-                dob = await self._get_player_dob(player_link)
+                dob = await self._get_player_dob(player_link, year)
                 if not dob:
                     continue
 
@@ -157,14 +160,14 @@ class AflTablesScraper():
                     self.player_tracker.add(key)
 
                 # check if the player exists by querying display_name and dob
-                existing_player_db = await self.player_service.get_player_from_db(display_name, dob)
+                player_exists = await self.player_service.check_if_player_in_db(display_name, dob)
 
-                if existing_player_db:
-                    player_id = existing_player_db[0] # first column is player_id. Use this value in the stats dto
+                if player_exists:
+                    player_id = await self.player_service.get_player_id(display_name, dob)
                 else:
                     # create a player profile dto which will then be inserted into the db
                     logger.info(f"Scraping profile data for {display_name}")
-                    player_profile = self.footy_wire_scraper._get_player_profile_stats(
+                    player_profile = await self.footy_wire_scraper.get_player_profile_stats(
                         team_name=home_team if index == 0 else away_team,
                         display_name=display_name,
                         dob=dob
@@ -191,7 +194,7 @@ class AflTablesScraper():
                         player_id=player_id,
                         game_id=game_id,
                         team=home_team if index == 0 else away_team,
-                        year=2025,
+                        year=year,
                         round=round_id,
                         **stat_values
                     )
@@ -217,21 +220,27 @@ class AflTablesScraper():
         metadata_string = all_rows[0].find("td", attrs={"align": "center"}).get_text(strip=True)
 
         # string returned is not in a useful format. Use a regex expression to extract the required data
-        pattern = r"Round:(\d+)Venue:(.*?)Date:.*?(\d{1,2}-\w{3}-\d{4}) (\d{1,2}:\d{2} [AP]M).*?Attendance:(\d+)"
-        # FIXME: Pattern only works for rounds like R1,R2.. R23, but it won't work for Quarter finals etc.
+        pattern = r"Round:([\w\s]+?)Venue:(.*?)Date:.*?(\d{1,2}-\w{3}-\d{4}) (\d{1,2}:\d{2} [AP]M).*?Attendance:(\d+)"
         match = re.search(pattern, metadata_string)
         
         logger.info("Checking input against regex pattern")
         if match:
-            round = match.group(1) # get the round from the string
+            round_label = match.group(1).strip() # get the round from the string
+            round_code = FINALS_ROUND_MAP.get(round_label, round_label)
+
             year = match.group(3).split("-")[2] # get the year from the string
             date = convert_date_format(match.group(3))
             # increment the game index counter
-            self.game_index_counter[round] += 1
-            game_index = self.game_index_counter[round]
+            self.game_index_counter[round_code] += 1
+            game_index = self.game_index_counter[round_code]
 
             # Build the game id string
-            game_id = f"{year}R{int(match.group(1)):02d}{game_index:02d}"
+            if round_code not in FINALS_ROUND_MAP.values():
+                game_id = f"{year}R{int(match.group(1)):02d}{game_index:02d}"
+            else:
+                logger.info(f"Building game id for a finals match: {metadata_string}")
+                game_id = f"{year}{round_code}{game_index:02d}"
+
             game_exists = await self.game_service.check_if_game_exists(date, home_team, away_team)
 
             if not game_exists:
@@ -240,7 +249,7 @@ class AflTablesScraper():
                 metadata_dto = MatchMetadataDTO(
                     game_id = game_id,
                     year=year,
-                    round_id = round,
+                    round_id = round_code,
                     venue = match.group(2).strip(),
                     date = match.group(3),
                     start_time = match.group(4),
@@ -253,7 +262,7 @@ class AflTablesScraper():
                     game_id=game_id,
                     home_team=home_team,
                     away_team=away_team,
-                    round_id=round
+                    round_id=round_code
                 )
         else:
             logger.warning("No regex match found")
@@ -310,21 +319,20 @@ class AflTablesScraper():
         )
 
     async def _get_table_element_from_page(self, match_endpoint) -> List | bool:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{self.base_url}{match_endpoint}")
-            if response.status_code == httpx.codes.OK:
-                soup = BeautifulSoup(response.text, "html.parser")
-        
-                # Get all tables with class 'sortable' and Match Statistics in the header
-                logger.info("Getting match stats table")
-                sortable_tables = soup.find_all("table", class_="sortable")
-                match_stats_tables = [table for table in sortable_tables if "Match Statistics" in table.find("th").get_text(strip=True)]
-                return match_stats_tables
-            else:
-                logger.warning("Match stats table not found")
-                return False
+        response = await self.client.get(f"{self.base_url}{match_endpoint}")
+        if response.status_code == httpx.codes.OK:
+            soup = BeautifulSoup(response.text, "html.parser")
     
-    async def _get_player_dob(self, player_link: str) -> str | bool:
+            # Get all tables with class 'sortable' and Match Statistics in the header
+            logger.info("Getting match stats table")
+            sortable_tables = soup.find_all("table", class_="sortable")
+            match_stats_tables = [table for table in sortable_tables if "Match Statistics" in table.find("th").get_text(strip=True)]
+            return match_stats_tables
+        else:
+            logger.warning("Match stats table not found")
+            return False
+    
+    async def _get_player_dob(self, player_link: str, year: int) -> str | bool:
         """Scrape the date of birth from the html
 
         Args:
@@ -333,8 +341,11 @@ class AflTablesScraper():
         Returns:
             str: Dob as a string
         """
-        async with httpx.AsyncClient() as client:
-            response = await client.get(urljoin(f"{self.base_url}games/2025/", player_link)) #FIXME: fudged url to work with player_link value
+        try:
+            if player_link in self.dob_cache:
+                return self.dob_cache[player_link]
+
+            response = await self.client.get(urljoin(f"{self.base_url}games/{year}/", player_link)) #FIXME: fudged url to work with player_link value
             if response.status_code == httpx.codes.OK:
                 soup = BeautifulSoup(response.text, "html.parser")
                 born_b_tag = soup.find("b", string=re.compile(r"Born:"))
@@ -344,9 +355,14 @@ class AflTablesScraper():
                     dob = born_b_tag.next_sibling.replace("(", "").strip()
                 else:
                     print("DOB not found")
-
+                
+                self.dob_cache[player_link] = dob
                 return dob
             else:
                 logger.warning("Get request failed so dob not scraped")
                 logger.info("Returning False")
                 return False
+        except httpx.ReadTimeout:
+            logger.warning(f"Failed to get DOB for {player_link}")
+            return False
+        

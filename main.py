@@ -1,6 +1,7 @@
 import time
 import asyncio
 from typing import Tuple
+import argparse
 
 from database import AsyncDatabaseConnection
 from dtos.games_dto import GameDTO
@@ -79,7 +80,7 @@ def initialise_scrapers(
 
     return afl_tables_scraper
 
-async def scrape_data_from_afl_tables(afl_tables_scraper: AflTablesScraper) -> Tuple[set, set, set]:
+async def scrape_data_from_afl_tables(afl_tables_scraper: AflTablesScraper, year: int) -> Tuple[set, set, set]:
     """Scrape the data from afl tables and footy wire and store in sets
 
     Args:
@@ -88,40 +89,48 @@ async def scrape_data_from_afl_tables(afl_tables_scraper: AflTablesScraper) -> T
     Returns:
         Tuple[set, set, set]: Sets for each table in the db
     """
-    year = 2025
     match_links = await afl_tables_scraper.get_match_links(year=year)
-    game_dtos = set()
-    stat_dtos = set()
-    player_dtos = set()
 
-    async def process_match(link):
-        game_dto = await afl_tables_scraper.get_match_related_data(link)
-        if isinstance(game_dto, GameDTO):
-            afl_tables_scraper.scraped_games.add(game_dto)
-        
-        await afl_tables_scraper.get_player_stats_for_match(
-            match_endpoint=link,
-            game_id=game_dto.game_id, 
-            home_team=game_dto.home_team, 
-            away_team=game_dto.away_team,
-            round_id = game_dto.round_id,
-            player_match_stats_dtos=stat_dtos
-        )
+    sem = asyncio.Semaphore(5) # limit to 5 concurrent requests to avoid overwhelming the server
 
-        return game_dto, player_stat_dtos, player_dtos
+    async def process_match(link) -> None:
+        async with sem:
+            game_dto = await afl_tables_scraper.get_match_related_data(link)
+
+            if not game_dto:
+                return
+            
+            if isinstance(game_dto, GameDTO):
+                afl_tables_scraper.scraped_games.add(game_dto)
+            
+            logger.info(f"Scraped game data for game id: {game_dto.game_id}")
+            await afl_tables_scraper.get_player_stats_for_match(
+                match_endpoint=link,
+                game_id=game_dto.game_id, 
+                home_team=game_dto.home_team, 
+                away_team=game_dto.away_team,
+                round_id = game_dto.round_id,
+                year=year
+            )
+
 
     tasks = [process_match(link) for link in match_links]
-    results = await asyncio.gather(*tasks)
-
-    for game_dto, player_stat_dtos, player_dtos in results:
-        if isinstance(game_dto, GameDTO):
-            game_dtos.add(game_dto)
-        stat_dtos.update(player_stat_dtos)
-        player_dtos.update(player_dtos)
+    await asyncio.gather(*tasks)
+    await afl_tables_scraper.client.aclose()
+    await afl_tables_scraper.footy_wire_scraper.client.aclose()
     
-    return game_dtos, player_dtos, stat_dtos
+    return (
+        afl_tables_scraper.scraped_games,
+        afl_tables_scraper.scraped_players,
+        afl_tables_scraper.scraped_stats
+    )
 
 async def scrape_stats():
+    parser = argparse.ArgumentParser(description='Scrapes AFL data from AFL Tables and Footy Wire and stores in a database.')
+    parser.add_argument('--year', type=int, default=2025, help='The year of the AFL season to scrape data for (default: 2025)')
+
+    args = parser.parse_args()
+    
     db_manager = AsyncDatabaseConnection()
     game_repository, player_repository, stat_repository = initialise_repositories(db_manager)
     game_service, player_service, stat_service = initialise_services(
@@ -130,11 +139,13 @@ async def scrape_stats():
         stat_repository
     )
     afl_tables_scraper = initialise_scrapers(game_service, player_service, stat_service)
-    game_dtos, player_dtos, stat_dtos = await scrape_data_from_afl_tables(afl_tables_scraper) 
+    game_dtos, player_dtos, stat_dtos = await scrape_data_from_afl_tables(afl_tables_scraper, args.year) 
     
     await game_service.insert_games(game_dtos)
     await player_service.insert_players(player_dtos)
     await stat_service.insert_stats(stat_dtos)
+
+    await db_manager.close_all()
     
 
 if __name__ == "__main__":

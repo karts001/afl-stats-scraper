@@ -14,10 +14,12 @@ class AsyncDatabaseConnection():
         self._min_conn = min_conn
         self._max_conn = max_conn
         self.pool = None
-        self.connection_string = f'postgresql://{os.getenv("DB_USERNAME")}:'
-        f'{os.getenv("DB_PWORD")}@'
-        f'{os.getenv("DB_URL")}{os.getenv("DB_NAME")}?'
-        f'sslmode={os.getenv("DB_SSL")}'        
+        self.connection_string = (
+            f'postgresql://{os.getenv("DB_USERNAME")}:'
+            f'{os.getenv("DB_PWORD")}@'
+            f'{os.getenv("DB_URL")}{os.getenv("DB_NAME")}?'
+            f'sslmode={os.getenv("DB_SSL")}'        
+        )
 
     async def create_connection_pool(self):
         self.pool = await pool.create_pool(
@@ -39,7 +41,7 @@ class AsyncDatabaseConnection():
     async def close_all(self):
         if self.pool:
             await self.pool.close()
-            logger.info("📤 All async database connections closed")
+            logger.info("All async database connections closed")
         
     def _sync_close_all(self):
         """A synchronous wrapper for graceful shutdown when the app exits."""

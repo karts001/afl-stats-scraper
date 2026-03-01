@@ -2,25 +2,31 @@
 
 import re
 from typing import List, Tuple
+
+import httpx
 from logger import logger
 
-import requests
 from bs4 import BeautifulSoup
 from nanoid import generate
 
 from dtos.player_profile_dto import PlayerProfileDTO
-from helpers import name_corrections
+from helpers import TEAM_SLUG_MAP, name_corrections
+
 
 class FootyWireScraper():
     def __init__(self, base_url: str):
         self.base_url = base_url
+        self.client = httpx.AsyncClient(headers=
+            {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
+            timeout=30.0
+        )
 
-    def _get_player_profile_stats(
+    async def get_player_profile_stats(
         self,
         display_name: str,
         team_name: str,
         dob: str
-    ) -> PlayerProfileDTO:
+    ) -> PlayerProfileDTO | None:
         """Scrape url to get profile related stats (height, weight etc.) for a given player
 
         Args:
@@ -35,16 +41,19 @@ class FootyWireScraper():
             team_name = "-".join(team_name_split)
         
         player_name = self._convert_display_name(display_name)
-        url = f"{self.base_url}/pp-{team_name.lower()}--{player_name.lower()}"
-        response = requests.get(url)
-        response.raise_for_status()
+        url = f"{self.base_url}/pp-{TEAM_SLUG_MAP[team_name]}--{player_name.lower()}"
+        response = await self.client.get(url)
+        
+        if response.status_code != httpx.codes.OK:
+            logger.error(f"Failed to fetch player profile for {display_name} from footy wire. Status code: {response.status_code}")
+            return
+
         soup = BeautifulSoup(response.text, "html.parser")
 
         if "Oops! Player Not Found ..." in soup.get_text(strip=True):
             logger.warning(f"Can't find {player_name} in FootyWire")
             logger.info(f"Tried scraping the following url: {url}")
-            # need to return a default value so program doesn't crash
-            return False
+            return
         
         profile_str = soup.find("div", id="playerProfileData1").get_text(strip=True)
         origin = self._extract_identity_data(profile_str)     
@@ -141,6 +150,6 @@ class FootyWireScraper():
 if __name__ == "__main__":
     scraper = FootyWireScraper(base_url="https://www.footywire.com/afl/footy")
     #TODO: use the following for unit tests
-    player_profile_dto = scraper._get_player_profile_stats("draper, sid", "adelaide")
-    player_profile_dto = scraper._get_player_profile_stats("de koning, tom", "carlton")
-    player_profile_dto = scraper._get_player_profile_stats("OConnell, liam", "st kilda")
+    player_profile_dto = scraper.get_player_profile_stats("draper, sid", "adelaide")
+    player_profile_dto = scraper.get_player_profile_stats("de koning, tom", "carlton")
+    player_profile_dto = scraper.get_player_profile_stats("OConnell, liam", "st kilda")

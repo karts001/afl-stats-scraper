@@ -4,14 +4,16 @@ from repositories.base_repository import BaseRepository
 
 
 class PlayerRepository(BaseRepository):
-    async def check_player_exists(self, display_name: str, dob: str):
+    async def check_player_exists(self, display_name: str, dob: str) -> bool:
         query = """
             SELECT *
             FROM players
             WHERE DisplayName ILIKE $1 AND Dob = $2
             LIMIT 1
         """
-        return await self.fetch_one(query, (display_name, dob,))
+        result = await self.fetch_one(query, (display_name, dob,))
+
+        return result is not None
     
     async def insert_players(self, player_dtos: List[PlayerProfileDTO]):
         if not player_dtos:
@@ -25,4 +27,18 @@ class PlayerRepository(BaseRepository):
             ON CONFLICT (PlayerId) DO NOTHING
         """
 
-        await self.execute_batch(query, values) 
+        await self.execute_batch(query, values)
+
+    async def get_player_id(self, display_name: str, dob: str) -> str | None:
+        query = """
+            SELECT PlayerId
+            FROM players
+            WHERE DisplayName ILIKE $1 AND Dob = $2
+            LIMIT 1
+        """
+        result = await self.fetch_one(query, (display_name, dob,))
+
+        if result:
+            return result[0] # PlayerId is the first column in the result set
+        
+        return None
