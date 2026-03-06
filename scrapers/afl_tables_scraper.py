@@ -101,6 +101,8 @@ class AflTablesScraper():
                 game_dto = GameDTO(**metadata_dto.model_dump(), **match_scores_dto.model_dump())
                 logger.info(f"game dto: {game_dto}")
                 self.scraped_games.add(game_dto)
+
+                return game_dto
         else:
             logger.error(f"❌ Failed to fetch match metadata and score data. Status: {response.status_code}")
             logger.info(f"Response content: {response.content}")
@@ -143,6 +145,7 @@ class AflTablesScraper():
                     continue  # skip malformed or empty rows
                 
                 # Get the players name
+                # player_id = None
                 player_link = cells[1].find("a")["href"] # url for player profile
                 display_name = cells[1].get_text(strip=True)
 
@@ -153,36 +156,45 @@ class AflTablesScraper():
 
                 key = (display_name, dob)
 
-                async with self._player_lock:
-                    if key in self.player_tracker:
-                        logger.info(f"{display_name} already scraped")
-                        continue
-                    self.player_tracker.add(key)
-
                 # check if the player exists by querying display_name and dob
                 player_exists = await self.player_service.check_if_player_in_db(display_name, dob)
 
-                if player_exists:
-                    player_id = await self.player_service.get_player_id(display_name, dob)
-                else:
-                    # create a player profile dto which will then be inserted into the db
-                    logger.info(f"Scraping profile data for {display_name}")
-                    player_profile = await self.footy_wire_scraper.get_player_profile_stats(
-                        team_name=home_team if index == 0 else away_team,
-                        display_name=display_name,
-                        dob=dob
-                    )
-
-                    if player_profile:
-                        self.scraped_players.add(player_profile)
-                        player_id = player_profile.player_id # need to set the player_id value for the next dto
+                async with self._player_lock:
+                    already_tracked = key in self.player_tracker
+                    if not already_tracked:
+                        self.player_tracker.add(key)
                 
+                if not already_tracked:
+                    if player_exists:
+                        player_id = await self.player_service.get_player_id(display_name, dob)
+
+                    else:
+                        logger.info(f"Scraping profile data for {display_name}")
+                        player_profile = await self.footy_wire_scraper.get_player_profile_stats(
+                            team_name=home_team if index == 0 else away_team,
+                            display_name=display_name,
+                            dob=dob
+                        )
+
+                        if player_profile:
+                            self.scraped_players.add(player_profile)
+                            player_id = player_profile.player_id # need to set the player_id value for the next dto
+
+
+                else:
+                    player_id = await self.player_service.get_player_id(display_name, dob)
+
+                logger.info(f"display name: {display_name}, dob: {dob}, player id: {player_id}")
+
                 if not player_id:
-                    continue # skip stats if no player ID
+                    logger.warning(f"No player ID found for {display_name}, skipping stat scraping for this player.")
+                    continue
+
 
                 # Map field names to their corresponding int values from cells[2:25]
                 # Unpack dictionary to form DTO
                 stat_exists = await self.stat_service.check_if_stat_exists(game_id, player_id)
+                logger.info(f"Checking if stat already exists for player {display_name} in game {game_id}: {stat_exists}")
                 if not stat_exists:
                     stat_values = {
                         field: int(cells[i + 2].get_text(strip=True) or 0) 
@@ -236,12 +248,14 @@ class AflTablesScraper():
 
             # Build the game id string
             if round_code not in FINALS_ROUND_MAP.values():
-                game_id = f"{year}R{int(match.group(1)):02d}{game_index:02d}"
+                game_id = f"{year}R{int(round_code):02d}{game_index:02d}"
             else:
                 logger.info(f"Building game id for a finals match: {metadata_string}")
                 game_id = f"{year}{round_code}{game_index:02d}"
 
             game_exists = await self.game_service.check_if_game_exists(date, home_team, away_team)
+
+            logger.info(f"Checking if game already exists in db for : {game_id} : {game_exists}")
 
             if not game_exists:
                 # only want to add the dto if it doesn't already exist in the db
@@ -257,9 +271,10 @@ class AflTablesScraper():
                 )
             else:
                 logger.info("Game exists in db")
+                existing_id = await self.game_service.get_game_id(date, home_team, away_team)
                 # return a reduced DTO with enough data to search for player stats
                 return ReducedGameDTO(
-                    game_id=game_id,
+                    game_id=existing_id,
                     home_team=home_team,
                     away_team=away_team,
                     round_id=round_code

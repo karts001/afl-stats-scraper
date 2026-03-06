@@ -11,7 +11,7 @@ class PlayerRepository(BaseRepository):
             WHERE DisplayName ILIKE $1 AND Dob = $2
             LIMIT 1
         """
-        result = await self.fetch_one(query, (display_name, dob,))
+        result = await self.fetch_one(query, (display_name, dob))
 
         return result is not None
     
@@ -31,14 +31,14 @@ class PlayerRepository(BaseRepository):
 
     async def get_player_id(self, display_name: str, dob: str) -> str | None:
         query = """
-            SELECT PlayerId
+            SELECT playerId
             FROM players
             WHERE DisplayName ILIKE $1 AND Dob = $2
             LIMIT 1
         """
-        result = await self.fetch_one(query, (display_name, dob,))
+        result = await self.fetch_one(query, (display_name, dob))
 
         if result:
-            return result[0] # PlayerId is the first column in the result set
+            return result['playerid']
         
         return None

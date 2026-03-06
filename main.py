@@ -90,32 +90,39 @@ async def scrape_data_from_afl_tables(afl_tables_scraper: AflTablesScraper, year
         Tuple[set, set, set]: Sets for each table in the db
     """
     match_links = await afl_tables_scraper.get_match_links(year=year)
+    logger.info(f"Found {len(match_links)} match links")
+    for link in match_links:
+        logger.info(f"Link: {link}")
 
     sem = asyncio.Semaphore(5) # limit to 5 concurrent requests to avoid overwhelming the server
 
     async def process_match(link) -> None:
-        async with sem:
-            game_dto = await afl_tables_scraper.get_match_related_data(link)
+        try:
+            async with sem:
+                game_dto = await afl_tables_scraper.get_match_related_data(link)
 
-            if not game_dto:
-                return
-            
-            if isinstance(game_dto, GameDTO):
-                afl_tables_scraper.scraped_games.add(game_dto)
-            
-            logger.info(f"Scraped game data for game id: {game_dto.game_id}")
-            await afl_tables_scraper.get_player_stats_for_match(
-                match_endpoint=link,
-                game_id=game_dto.game_id, 
-                home_team=game_dto.home_team, 
-                away_team=game_dto.away_team,
-                round_id = game_dto.round_id,
-                year=year
-            )
+                if not game_dto:
+                    return
+                
+                logger.info(f"Scraped game data for game id: {game_dto.game_id}")
+                await afl_tables_scraper.get_player_stats_for_match(
+                    match_endpoint=link,
+                    game_id=game_dto.game_id, 
+                    home_team=game_dto.home_team, 
+                    away_team=game_dto.away_team,
+                    round_id = game_dto.round_id,
+                    year=year
+                )
+        except Exception as e:
+            logger.error(f"Error processing match link {link}: {e}")
 
 
     tasks = [process_match(link) for link in match_links]
     await asyncio.gather(*tasks)
+    logger.info(f"Scraped {len(afl_tables_scraper.scraped_games)} new games")
+    logger.info(f"Scraped {len(afl_tables_scraper.scraped_players)} new players")
+    logger.info(f"Scraped {len(afl_tables_scraper.scraped_stats)} new stats")
+
     await afl_tables_scraper.client.aclose()
     await afl_tables_scraper.footy_wire_scraper.client.aclose()
     

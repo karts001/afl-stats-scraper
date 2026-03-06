@@ -30,4 +30,16 @@ class GameRepository(BaseRepository):
             ON CONFLICT (GameId) DO NOTHING
         """
         await self.execute_batch(query, values)
+
+    async def get_game_id(self, date:str, home_team: str, away_team: str) -> str:
+        query = """
+            SELECT gameid FROM games
+            WHERE Date = $1 AND hometeam =$2 AND awayteam = $3
+            LIMIT 1
+        """
+
+        result = await self.fetch_one(query, (date, home_team, away_team))
+        
+        return result['gameid'] if result else None
+
         

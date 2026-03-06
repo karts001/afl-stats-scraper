@@ -1,4 +1,7 @@
 from typing import Any, List, Optional, Tuple
+from dtos.games_dto import GameDTO
+from dtos.player_profile_dto import PlayerProfileDTO
+from dtos.stats_dto import PlayerMatchStatsDTO
 from logger import logger
 
 import asyncpg
@@ -28,7 +31,7 @@ class BaseRepository():
             logger.error(f"Failed to execute batch: {e}")
             raise
     
-    def get_columns_placeholders_and_values(self, dtos: set[Any]):
+    def get_columns_placeholders_and_values(self, dtos: List[GameDTO | PlayerProfileDTO | PlayerMatchStatsDTO]):
         if not dtos:
             raise ValueError("DTO set is empty")
         sample_dto = next(iter(dtos)) # can't index sets so use this instead

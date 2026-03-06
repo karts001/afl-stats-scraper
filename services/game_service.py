@@ -12,3 +12,6 @@ class GameService():
 
     async def insert_games(self, game_dtos: List[GameDTO]) -> None:
         await self.repo.insert_games(game_dtos)
+
+    async def get_game_id(self, date: str, home_team: str, away_team: str) -> str:
+        return await self.repo.get_game_id(date, home_team, away_team)
