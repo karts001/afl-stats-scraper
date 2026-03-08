@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Set, Optional, Tuple
 from dtos.games_dto import GameDTO
 from dtos.player_profile_dto import PlayerProfileDTO
 from dtos.stats_dto import PlayerMatchStatsDTO
@@ -9,7 +9,7 @@ import asyncpg
 from database import AsyncDatabaseConnection
 
 class BaseRepository():
-    def __init__(self, db_manager: Optional[AsyncDatabaseConnection]):
+    def __init__(self, db_manager: AsyncDatabaseConnection):
         self.db_manager = db_manager
 
     async def fetch_one(self, query: str, params: Tuple[Any, ...] = ()):
@@ -31,7 +31,7 @@ class BaseRepository():
             logger.error(f"Failed to execute batch: {e}")
             raise
     
-    def get_columns_placeholders_and_values(self, dtos: List[GameDTO | PlayerProfileDTO | PlayerMatchStatsDTO]):
+    def get_columns_placeholders_and_values(self, dtos: Set[GameDTO] | Set[PlayerProfileDTO] | Set[PlayerMatchStatsDTO]):
         if not dtos:
             raise ValueError("DTO set is empty")
         sample_dto = next(iter(dtos)) # can't index sets so use this instead

@@ -1,4 +1,4 @@
-from typing import List
+from typing import Set
 
 from repositories.base_repository import BaseRepository
 from dtos.games_dto import GameDTO
@@ -18,7 +18,7 @@ class GameRepository(BaseRepository):
 
         return result is not None
 
-    async def insert_games(self, game_dtos: List[GameDTO]) -> None:
+    async def insert_games(self, game_dtos: Set[GameDTO]) -> None:
         if not game_dtos:
             return
         
@@ -40,6 +40,6 @@ class GameRepository(BaseRepository):
 
         result = await self.fetch_one(query, (date, home_team, away_team))
         
-        return result['gameid'] if result else None
+        return result['gameid']
 
         

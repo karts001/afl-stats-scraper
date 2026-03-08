@@ -89,7 +89,12 @@ async def scrape_data_from_afl_tables(afl_tables_scraper: AflTablesScraper, year
     Returns:
         Tuple[set, set, set]: Sets for each table in the db
     """
+
     match_links = await afl_tables_scraper.get_match_links(year=year)
+
+    if not match_links:
+        return (set(), set(), set())
+    
     logger.info(f"Found {len(match_links)} match links")
     for link in match_links:
         logger.info(f"Link: {link}")
@@ -131,6 +136,7 @@ async def scrape_data_from_afl_tables(afl_tables_scraper: AflTablesScraper, year
         afl_tables_scraper.scraped_players,
         afl_tables_scraper.scraped_stats
     )
+
 
 async def scrape_stats():
     parser = argparse.ArgumentParser(description='Scrapes AFL data from AFL Tables and Footy Wire and stores in a database.')

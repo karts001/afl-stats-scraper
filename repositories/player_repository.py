@@ -1,4 +1,4 @@
-from typing import List
+from typing import Set
 from dtos.player_profile_dto import PlayerProfileDTO
 from repositories.base_repository import BaseRepository
 
@@ -15,7 +15,7 @@ class PlayerRepository(BaseRepository):
 
         return result is not None
     
-    async def insert_players(self, player_dtos: List[PlayerProfileDTO]):
+    async def insert_players(self, player_dtos: Set[PlayerProfileDTO]):
         if not player_dtos:
             return
         

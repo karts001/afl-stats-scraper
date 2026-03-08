@@ -1,6 +1,11 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 class PlayerMatchStatsDTO(BaseModel):
+    model_config = ConfigDict(
+        validate_by_name=True,
+        frozen=True,
+        populate_by_name=True
+    )
     game_id: str = Field(alias="GameId")
     team: str = Field(alias="Team")
     year: int = Field(alias="Year")
@@ -30,7 +35,3 @@ class PlayerMatchStatsDTO(BaseModel):
     bounces: int = Field(alias="Bounces")
     goal_assist: int = Field(alias="GoalAssists")
     percent_played: int = Field(alias="PercentPlayed")
-
-    class Config:
-        validate_by_name=True
-        frozen=True
