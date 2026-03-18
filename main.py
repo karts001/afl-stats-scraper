@@ -140,7 +140,7 @@ async def scrape_data_from_afl_tables(afl_tables_scraper: AflTablesScraper, year
 
 async def scrape_stats():
     parser = argparse.ArgumentParser(description='Scrapes AFL data from AFL Tables and Footy Wire and stores in a database.')
-    parser.add_argument('--year', type=int, default=2025, help='The year of the AFL season to scrape data for (default: 2025)')
+    parser.add_argument('--year', type=int, default=2026, help='The year of the AFL season to scrape data for (default: 2025)')
 
     args = parser.parse_args()
     

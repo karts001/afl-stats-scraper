@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 import asyncio
 import os
 
-from asyncpg import pool
+from asyncpg import pool, Pool
 from dotenv import load_dotenv
 
 from logger import logger
@@ -13,7 +13,8 @@ class AsyncDatabaseConnection():
     def __init__(self, min_conn=1, max_conn=10):
         self._min_conn = min_conn
         self._max_conn = max_conn
-        self.pool = None
+        self.pool: Pool | None = None
+        self._pool_lock = asyncio.Lock()
         self.connection_string = (
             f'postgresql://{os.getenv("DB_USERNAME")}:'
             f'{os.getenv("DB_PWORD")}@'
@@ -32,9 +33,11 @@ class AsyncDatabaseConnection():
     @asynccontextmanager
     async def connection_from_pool(self):
         if not self.pool:
-            logger.error("Connection pool not initialised")
-            logger.info("Create the connection pool")
-            await self.create_connection_pool()
+            async with self._pool_lock:
+                logger.info("Connection pool not initialised, creating...")
+                await self.create_connection_pool()
+        
+        assert self.pool is not None
         async with self.pool.acquire() as conn:
             yield conn
     

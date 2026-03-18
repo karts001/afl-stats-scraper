@@ -27,4 +27,4 @@ jobs:
           DB_USERNAME: ${{ secrets.DB_USERNAME }}
           DB_PWORD: ${{ secrets.DB_PWORD }}
           DB_SSL: ${{ secrets.DB_SSL }}
-        run: python main.py
+        run: python main.py --year 2026

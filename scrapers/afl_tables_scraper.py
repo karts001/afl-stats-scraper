@@ -68,8 +68,7 @@ class AflTablesScraper():
                     str(link["href"]) for link in all_links if f"games/{year}" in link["href"]
                 ))
             else:
-                logger.error(f"Failed to fetch match links for {year}. Status: {response.status_code}")
-                logger.info(f"Response content: {response.text}")
+                logger.error(f"Failed to fetch match links for {year} season. Status: {response.status_code}")
                 return
         except Exception as e:
             logger.error(f"An error occurred fetching match links")
